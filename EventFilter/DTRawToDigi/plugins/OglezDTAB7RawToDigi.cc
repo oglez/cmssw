@@ -322,7 +322,7 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
         --k;
 
         // Checking it is fine...
-        if (((dataWord>>62)&0x3)==3)  {  // It is ok!
+        if (((dataWord>>60)&0xF)==0xC)  {  // It is ok! (v6)
           readAB7PayLoad_triggerPrimitive(firstWord,dataWord,DTAB7FED,slot);
         }
         else if ( debug_ ) edm::LogWarning("oglez_dtab7_unpacker")
@@ -417,7 +417,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
     int slId = (hitinfo>>26)&0x3;   // Bits 26-27: SL number
     int stationId = (hitinfo>>28)&0x3;   // Bits 28-29: Station number
 
-    std::cout<<"OGDT-INFO: Information: "<<channelId<<" "<<stationId<<" "<<slId<<std::endl;
+//    std::cout<<"OGDT-INFO: Information: "<<channelId<<" "<<stationId<<" "<<slId<<std::endl;
 
     // Getting the channel index.
 //    int dduId = theDDU(fedno, slot, link);
@@ -476,33 +476,35 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   int time = ((firstWord>>41)&0x1FFFF) ; // Bits 41-57 (first word) is the time (in nanoseconds)
   int bx = time/25;  // Bunch crossing in LHC notation (as I understand the "0")
 
-  int position = ((firstWord)&0xFFFF);   // Bits 0-15 (first word) is the position (phi or theta depending on SL)
+//v4  int position = ((firstWord)&0xFFFF);   // Bits 0-15 (first word) is the position (phi or theta depending on SL)
+  int position = ((firstWord)&0x7FFF);   // Bits 0-14 (first word) is the position (phi or theta depending on SL)
 
-  int jmTanPhi = ((firstWord>>16)&0x7FFF);     // Bits 16-30 (first word) is the slope (phi or theta depending on SL)
+//v4  int jmTanPhi = ((firstWord>>16)&0x7FFF);     // Bits 16-30 (first word) is the slope (phi or theta depending on SL)
+  int jmTanPhi = ((firstWord>>15)&0x7FFF);     // Bits 15-29 (first word) is the slope (phi or theta depending on SL)
   // Acording to Jose Manuel (email 2019_04_03) this is 4096*tan(phi)
   // but we we need to account for the sign.
   if ( ((jmTanPhi>>14)&0x01)==0x01) { // Negative value!
     jmTanPhi = (jmTanPhi-32768);   // (1<<15)    // -1*(((~slope)&0x7FFF)+1);
   }
 
-//  int chi2 = ((firstWord>>30)&0x1F);    // Bits 30-34 (first word) is the chi2 (in v5)
-  int chi2 = (secondWord&0x1F);             // Bits 0-4 (second word) is the chi2 of the fit (in v4)
-  int tpindex = ((secondWord>>5)&0x07);     // Bits 5-7 (second word) is the index of this trigger primitive in the event (in v4)
+  int chi2 = ((firstWord>>30)&0x1F);    // Bits 30-34 (first word) is the chi2 (in v6)
+//v4  int chi2 = (secondWord&0x1F);             // Bits 0-4 (second word) is the chi2 of the fit (in v4)
+//v4  int tpindex = ((secondWord>>5)&0x07);     // Bits 5-7 (second word) is the index of this trigger primitive in the event (in v4)
 
   if (0 || doHexDumping_) std::cout<<"OGDT-INFO: Dump + TP Info summary: BX: "<<bx<<std::endl; // TEST:" "<<32*bx/25<<std::endl;
 
-  std::cout<<"            PRUEBA-TP(1): "<<bx<<" "<<station<<" "<<superlayer<<" Q="<<quality<<" "<<chi2<<" "<<jmTanPhi<<" "<<position<<std::endl;
-  std::cout<<"            PRUEBA-TP(2): "<<chi2<<" "<<tpindex<<" "<<std::endl;
+//  std::cout<<"            PRUEBA-TP(1): "<<bx<<" "<<station<<" "<<superlayer<<" Q="<<quality<<" "<<chi2<<" "<<jmTanPhi<<" "<<position<<std::endl;
+//  std::cout<<"            PRUEBA-TP(2): "<<chi2<<" "<<superlayer<<" "<<std::endl;
 
-  std::cout<<"OGDTINFO Control version: "<<((firstWord>>31)&0xF)<<" "<<((secondWord>>52)&0x3FF)<<std::endl;
+//  std::cout<<"OGDTINFO Control version: "<<((firstWord>>31)&0xF)<<" "<<((secondWord>>52)&0x3FF)<<" "<<superlayer<<std::endl;
 
 
-  // Getting the hits per layer:
+  // Getting the hits per layer (adapted to v6):
 //  for (int i=0;i<4;++i) {  // Scanning layer number (inverted with respect to usual? Alvaro claims 4 is bottom...)
-//    int lat = ((secondWord>>(11-i))&1);  // Laterality (1 is right, 0 is left)
-//    int use = ((secondWord>>(15-i))&1);  // Was digi used in the primitive?
-//    int driftime = ((secondWord>>(28-4*i))&0xF);  // 1/32 of Drift time in ns (?), 15 means greater than 14, calculated as hit_time-primitive time
-//    int chan = ((secondWord>>(53-7*i))&0x3F);  // channel number inside its layer
+//    int lat = ((secondWord>>(3-i))&1);  // Laterality (1 is right, 0 is left)
+//    int use = ((secondWord>>(7-i))&1);  // Was digi used in the primitive?
+//    int driftime = ((secondWord>>(20-4*i))&0xF);  // 1/32 of Drift time in ns (?), 15 means greater than 14, calculated as hit_time-primitive time
+//    int chan = ((secondWord>>(45-7*i))&0x3F);  // channel number inside its layer
 //    std::cout<<"                 - Layer: "<<(i+1)<<" "<<lat<<" "<<use<<" "<<driftime<<" "<<chan<<std::endl;
 //  }
 
@@ -516,12 +518,10 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   // To change to the global we need to indicate where we are... for the
   // superlayer (although it is not clear who provide the superlayer)
 
-  superlayer=1;  //HARDCODED!!!
+//OLD v4  superlayer=1;  //HARDCODED!!!
   DTSuperLayerId slId(wheel,station,sector,superlayer);
-
   double phiAngle=0;
   double phiBending=0;
-
   OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/4.,  // Using mm as this argument (JM uses mm as metric)
                                                           jmTanPhi/4096.,quality,&phiAngle,&phiBending);
 
@@ -536,7 +536,8 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
                               (int)round(phiBending*2048./1.4),   // uphib (m_phiBending)
 
                               quality,  // uqua (m_qualityCode)
-                              tpindex,  // uind (m_segmentIndex)
+                              0,   // uind (m_segmentIndex)
+// v4 tpindex,  // uind (m_segmentIndex)
                               time,  // ut0 (m_t0Segment)
                               chi2,  // uchi2 (m_chi2Segment)
                               -10);  // urpc (m_rpcFlag)
@@ -686,11 +687,16 @@ void OglezDTAB7RawToDigi::sx5ChannelMapping_June2019 (int chanid, int *sl, int *
   // Static routine to process the current mapping between the channel ID and
   // the wire, Layer and SL of the digi for the Phase-2 prototype..
 {
-  // The (*sl) champ is ignored...
+  // The (*sl) value is ignored...
 
+  // NOTE: In practice this is no longer needed since the channel_id has been
+  // set in such a way that explicitly stores the layer and the wire, perhaps
+  // with an offset, but I keep it for now in case we need to play with it.
 
+  // From Cristina (and v6 of the payload)
 
-
+  (*wire) = (chanid>>2)+1;
+  (*layer) = (chanid&0x3)+1;
 }
 
 //-----------------------------------------------------------------------
@@ -745,7 +751,4 @@ void OglezDTAB7RawToDigi::sx5ChannelMapping_April2019 (int chanid, int *sl, int 
   (*layer) = 4 - 2*(i%2) - (i>=2);
 }
 
-//-----------------------------------------------------------------------
-// #include "FWCore/Framework/interface/MakerMacros.h"
-// DEFINE_FWK_MODULE(OglezDTAB7RawToDigi);
 //=======================================================================
