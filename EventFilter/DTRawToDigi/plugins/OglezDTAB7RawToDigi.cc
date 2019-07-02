@@ -68,6 +68,8 @@ OglezDTAB7RawToDigi::OglezDTAB7RawToDigi(const edm::ParameterSet& pset)
 
   rawTPVars_ = pset.getUntrackedParameter<bool>("rawTPVars", false);
 
+  correctTPTimeToL1A_ = pset.getUntrackedParameter<bool>("correctTPTimeToL1A",true);
+
   feds_ = pset.getUntrackedParameter<std::vector<int> >("feds", std::vector<int>());
 
   rawToken_ = consumes<FEDRawDataCollection>(DTAB7InputTag_);
@@ -196,6 +198,8 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
                                   edm::Handle<FEDRawDataCollection> data,
                                   edm::ESHandle<DTReadOutMapping> mapping) {
 
+  //std::cout<<"--------------------------------------------------------"<<std::endl;
+
   // Reading the data for the requested FED:
 
   FEDRawData dturosdata = data->FEDData(DTAB7FED);
@@ -283,7 +287,7 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
 
     //int dataLenght = (dataWord & 0xFFFFF);         // positions 0 -> 19
     int bx = (dataWord >> 20 ) & 0xFFF;    // positions 20 -> 31
-   int event      = (dataWord >> 32 ) & 0xFFFFFF; // positions 32 -> 55
+    int event      = (dataWord >> 32 ) & 0xFFFFFF; // positions 32 -> 55
 //   int AMC_ID     = (dataWord >> 56 ) & 0xF;      // positions 56 -> 59
 //   int control    = (dataWord >> 60 ) & 0xF;      // positions 59 -> 63
 //   int wheel      = AB7Wheel;
@@ -436,7 +440,11 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
     int slId = (hitinfo>>26)&0x3;   // Bits 26-27: SL number
     int stationId = (hitinfo>>28)&0x3;   // Bits 28-29: Station number
 
-//    std::cout<<"OGDT-INFO: Information: "<<channelId<<" "<<stationId<<" "<<slId<<std::endl;
+    if (slId==0) {
+      std::cerr<<"OGDT-ERROR: Superlayer of a digi is zero... readout problem!!!"<<std::endl;
+    }
+
+    // std::cout<<"OGDT-INFO: Information: "<<channelId<<" "<<stationId<<" "<<slId<<" "<<tdc_hit_t<<std::endl;
 
     // Getting the channel index.
 //    int dduId = theDDU(fedno, slot, link);
@@ -493,7 +501,11 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
 
   int quality = ((firstWord>>35)&0x3F);   // Bits 35-40 (first word) is the quality of the TP
   int time = ((firstWord>>41)&0x1FFFF) ; // Bits 41-57 (first word) is the time (in nanoseconds)
+  // The time may need to be corrected to use the "L1A time" as the reference:
+  if (correctTPTimeToL1A_) time -= 25*bxCounter_;
+
   int bx = time/25;  // Bunch crossing in LHC notation (as I understand the "0")
+  if (bx<0) bx += 3564;  // BX in previous orbit!
 
 //v4  int position = ((firstWord)&0xFFFF);   // Bits 0-15 (first word) is the position (phi or theta depending on SL)
   int position = ((firstWord)&0x7FFF);   // Bits 0-14 (first word) is the position (phi or theta depending on SL)
@@ -538,7 +550,9 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   // superlayer (although it is not clear who provide the superlayer)
 
 //OLD v4  superlayer=1;  //HARDCODED!!!
+
   DTSuperLayerId slId(wheel,station,sector,superlayer);
+
   double phiAngle=0;
   double phiBending=0;
   OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/4.,  // Using mm as this argument (JM uses mm as metric)
@@ -555,9 +569,11 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
     uphib = jmTanPhi;   // phib stores the SIGNED tan phi (directly related to slope, but not exactly the same bit content)
   }
 
+//  std::cout<<"PRIMITIVA "<<superlayer<<" "<<quality<<" "<<phiAngle<<" "<<phiBending<<std::endl;
+
   L1Phase2MuDTPhDigi trigprim(bx,   // ubx (m_bx)
                               wheel,   // uwh (m_wheel)
-                              sector,   // usc (m_sector)
+                              sector-1,   // usc (m_sector)  USING L1 trigger primitives convention.
                               station,      // ust (m_station)
                               superlayer,   // usl (m_superlayer)
 
@@ -570,6 +586,8 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
                               time,  // ut0 (m_t0Segment)
                               chi2,  // uchi2 (m_chi2Segment)
                               -10);  // urpc (m_rpcFlag)
+
+  // Storing the primitive
   primitives_.push_back(trigprim);
 }
 

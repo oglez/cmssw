@@ -80,6 +80,12 @@ private:
   /// and phiBending.
   bool rawTPVars_;
 
+  /// To indicate that the timing of the trigger primitives must be corrected
+  /// to the L1A time reference (if not, using the information from the fed,
+  /// which is the start of the orbit).
+  bool correctTPTimeToL1A_;
+
+
   /// Feds that should be read in the task.
   std::vector<int> feds_;
 
