@@ -5,6 +5,7 @@
 ///
 /// <PRE>
 /// Written by Oscar Gonzalez (2019_06_11)
+///                            2019_06_28  Using the transformation for the correlated primitives (SL=0)
 /// </PRE>
 
 #ifndef __DTOglezAna_OglezTransformJMSystem_h
@@ -70,7 +71,7 @@ public:
   /// Configuration of the hardcoded files to perform the transformation.
   void xShiftConfigure (std::string xshiftfile) {
     if (_xShifts.size()>0) {
-      std::cerr<<"OGDT-ERROR: Not possible to set the shifts on the X variable for OglezTransformJMSystem"<<std::endl;
+      std::cerr<<"OGDT-WARNING: Not possible to set (again) the shifts on the X variable for OglezTransformJMSystem"<<std::endl;
       return;
     }
 
@@ -89,14 +90,19 @@ public:
     }
   }
 
+  /// Get the value of the shift for a given SL in a given chamber.
+  float getXShift (int wheel, int sector, int station, int sl) {
+    DTWireId wireId(wheel,station,sector,sl,2,1);
+
+    int rawid = wireId.rawId();
+    return _xShifts[rawid];
+  }
+
   /// Apply the transformation to extract Phi and PhiBending.
   void getPhiAndPhiBending(const DTSuperLayerId &dtsl,
                         edm::ESHandle<DTGeometry> dtGeo,
                         float position, float tanPhi, int qual,double *phiAngle,double *phiBending) {
 
-    DTWireId wireId(dtsl,2,1);
-
-    int rawid = wireId.rawId();
     int wheel = dtsl.wheel();
     int station = dtsl.station();
     int sl = dtsl.superLayer();
@@ -115,14 +121,18 @@ public:
     if(thisec==13) thisec = 4;
     else if(thisec==14) thisec = 10;
 
-    // For the single-SL "uncorrelated" primitives
-    if (qual<6 || qual==7) {  // Quality identification
+    double x_loc=0;
+    double z_loc=0;
 
-      double x_loc = (position/10.)+_xShifts[rawid];  // Converting to cm!
+    // For the single-SL "uncorrelated" primitives
+    //    if (qual<6 || qual==7) {  // Quality identification
+    if (sl!=0) {
+      DTWireId wireId(dtsl,2,1);
+      int rawid = wireId.rawId();
+
+      x_loc = (position/10.)+_xShifts[rawid];  // Converting to cm!
 
       // NOTE: Z is not used???? Hard-coded values???
-
-      double z_loc = 0;
 
       if (station==3 || station==4) {
         if (sl==1) z_loc = 9.95;
@@ -132,25 +142,33 @@ public:
         if (sl==1) z_loc = 11.75;
         else if (sl==3) z_loc = -11.75;
       }
-
-      // The second step is to get the phi and the phiBending from the global geometry:
-
-      GlobalPoint x_global = dtGeo->chamber(DTChamberId(wheel,station,sector))->toGlobal(LocalPoint(x_loc,0.,z_loc));
-
-      double phi= x_global.phi()-0.5235988*(thisec-1);  // (Pi/6) rads
-      double psi=TMath::ATan(tanPhi_loc);
-
-      double phiB=-psi-phi;
-      if ( wheel>0 || (wheel==0 && (thisec%4)>1) ) {  // They call this "hasPosRF"
-        phiB=psi-phi;   // Changing sign
-      }
-      (*phiAngle) = phi;
-      (*phiBending) = phiB;
     }
     else {
-      // For the multi-SL "correlated" primitives
-      std::cerr<<"OGDT-ERROR: "<<std::endl;
+      // For the multi-SL "correlated" primitives the origin of JM reference
+      // system seems to be SL1 (?), so we correct using that
+
+      DTWireId wireId(DTSuperLayerId(wheel,station,dtsl.sector(),1),2,1);
+      int rawid = wireId.rawId();
+
+      x_loc = (position/10.)+_xShifts[rawid];  // Converting to cm from milimeters!
+
+      if(station>=3) z_loc=1.8;  // "position" of the segment associated to the primitive
     }
+
+    // The second step is to get the phi and the phiBending from the global
+    // geometry, after fixing correctly the position in the local system
+
+    GlobalPoint x_global = dtGeo->chamber(DTChamberId(wheel,station,sector))->toGlobal(LocalPoint(x_loc,0.,z_loc));
+
+    double phi= x_global.phi()-0.5235988*(thisec-1);  // (Pi/6) rads
+    double psi=TMath::ATan(tanPhi_loc);
+
+    double phiB=-psi-phi;
+    if ( wheel>0 || (wheel==0 && (thisec%4)>1) ) {  // They call this "hasPosRF"
+      phiB=psi-phi;   // Changing sign
+    }
+    (*phiAngle) = phi;
+    (*phiBending) = phiB;
   }
 };
 

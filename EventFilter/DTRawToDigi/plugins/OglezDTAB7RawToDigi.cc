@@ -79,24 +79,24 @@ OglezDTAB7RawToDigi::OglezDTAB7RawToDigi(const edm::ParameterSet& pset)
 
   if (val==std::string("april2019")) {
     _channelMapping = &OglezDTAB7RawToDigi::sx5ChannelMapping_April2019;
-    std::cout<<"OGDT-INFO: Using the 'april2019' channel mapping";
+    if ( debug_ ) std::cout<<"OGDT-INFO: Using the 'april2019' channel mapping";
   }
 
   else if (val==std::string("june2019")) {
     _channelMapping = &OglezDTAB7RawToDigi::sx5ChannelMapping_June2019;
-    std::cout<<"OGDT-INFO: Using the 'june2019' channel mapping";
+    if ( debug_ ) std::cout<<"OGDT-INFO: Using the 'june2019' channel mapping";
   }
 
   else if (val==std::string("july2019")) {
     _channelMapping = &OglezDTAB7RawToDigi::sx5ChannelMapping_July2019;
-    std::cout<<"OGDT-INFO: Using the 'july2019' channel mapping";
+    if ( debug_ ) std::cout<<"OGDT-INFO: Using the 'july2019' channel mapping";
   }
 
   else {  // Using the dummy selection in any other case
     _channelMapping = &OglezDTAB7RawToDigi::sx5ChannelMapping_dummy;
-    std::cout<<"OGDT-INFO: Using the dummy (blind)";
+    if ( debug_ ) std::cout<<"OGDT-INFO: Using the dummy (blind)";
   }
-  std::cout<<" mapping of the channels to the wires in the unpacking of the DIGIS"<<std::endl;
+  if ( debug_ ) std::cout<<" mapping of the channels to the wires in the unpacking of the DIGIS"<<std::endl;
 
   // Transformation to the center of the camera from JM system.
 
@@ -162,6 +162,10 @@ void OglezDTAB7RawToDigi::produce(edm::Event& e, const edm::EventSetup& c)
   L1Phase2MuDTPhContainer primContainer;
   primContainer.setContainer(primitives_);
   auto AB7DTPrim_product = std::make_unique<L1Phase2MuDTPhContainer>(primContainer);
+
+//  if (primitives_.size()==0) {
+//    std::cout<<"OGDT-INFO: No TP in the event (?) "<<primitives_.size()<<std::endl;
+//  }
 
 //  e.put(std::move(AB7DTDigi_product), "DTAB7Digis");
 //  e.put(std::move(AB7DTPrim_product), "DTAB7Primitives");
@@ -387,20 +391,24 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
   int CRC     = ( dataWord >> 16 ) & 0xFFFF;   // Bits 16-31 is the expected CRC
 
   if ( newCRC_ != CRC ) {
-    if ( debug_ ) edm::LogWarning("oglez_dtab7_unpacker")
-                    << "Calculated CRC "
-                    << std::hex << newCRC_
-                    << " differs from CRC in trailer "
-                    << CRC << std::dec;
-    std::cout<<"OGDT-ERROR: CRC does not match!!! "<<evtLgth<<" "<<lineCounter_<<" "<<std::hex<<CRC<<" "<<newCRC_<<" "<<std::dec<<std::endl;
+    if ( debug_ ) {
+      edm::LogWarning("oglez_dtab7_unpacker")
+        << "Calculated CRC "
+        << std::hex << newCRC_
+        << " differs from CRC in trailer "
+        << CRC << std::dec;
+      std::cout<<"OGDT-ERROR: CRC does not match!!! "<<evtLgth<<" "<<lineCounter_<<" "<<std::hex<<CRC<<" "<<newCRC_<<" "<<std::dec<<std::endl;
+    }
     return;
   }
 
   if ( lineCounter_ != evtLgth ) {
-    if ( debug_ ) edm::LogWarning("oglez_dtab7_unpacker")
-                    << "Number of words read != event lenght "
-                    << lineCounter_ << " " << evtLgth;
-    std::cout<<"OGDT-ERROR: line counting does not match!!! "<<evtLgth<<" "<<lineCounter_<<" "<<std::hex<<CRC<<" "<<newCRC_<<" "<<std::dec<<std::endl;
+    if ( debug_ ) {
+      edm::LogWarning("oglez_dtab7_unpacker")
+        << "Number of words read != event lenght "
+        << lineCounter_ << " " << evtLgth;
+      std::cout<<"OGDT-ERROR: line counting does not match!!! "<<evtLgth<<" "<<lineCounter_<<" "<<std::hex<<CRC<<" "<<newCRC_<<" "<<std::dec<<std::endl;
+    }
     return;
   }
 
@@ -549,8 +557,6 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   // To change to the global we need to indicate where we are... for the
   // superlayer (although it is not clear who provide the superlayer)
 
-//OLD v4  superlayer=1;  //HARDCODED!!!
-
   DTSuperLayerId slId(wheel,station,sector,superlayer);
 
   double phiAngle=0;
@@ -569,7 +575,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
     uphib = jmTanPhi;   // phib stores the SIGNED tan phi (directly related to slope, but not exactly the same bit content)
   }
 
-//  std::cout<<"PRIMITIVA "<<superlayer<<" "<<quality<<" "<<phiAngle<<" "<<phiBending<<std::endl;
+//  std::cout<<"PRIMITIVA "<<superlayer<<" "<<quality<<" "<<phiAngle<<" "<<phiBending<<" "<<(position/4.)<<" "<<(jmTanPhi/4096.)<<" RAW: "<<position<<" "<<jmTanPhi<<std::endl;
 
   L1Phase2MuDTPhDigi trigprim(bx,   // ubx (m_bx)
                               wheel,   // uwh (m_wheel)
