@@ -446,7 +446,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
 
     int channelId = (hitinfo>>17)&0x1FF;   // Bits 17-25: Channel index
     int slId = (hitinfo>>26)&0x3;   // Bits 26-27: SL number
-    int stationId = (hitinfo>>28)&0x3;   // Bits 28-29: Station number
+    int stationId = ((hitinfo>>28)&0x3)+1;   // Bits 28-29: Station number (-1, C++ convention)
 
     if (slId==0) {
       std::cerr<<"OGDT-ERROR: Superlayer of a digi is zero... readout problem!!!"<<std::endl;
@@ -468,8 +468,8 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
     else hitOrder_[chCode]++;
 
     // Forcing the chamber to be in an specific wheel & sector
-    int wheelId=2, sectorId=12; //, stationId=1, sectorId=4, slId=1;  // MB1 negative
-    stationId=2;
+    int wheelId=2, sectorId=12;
+    //if (stationId==1) stationId=2;  // for "v6" of the payload, before run 330160
 
     // Getting the values from the current mapping
     int layerId=-999, wire=-999;
@@ -504,7 +504,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
 void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long secondWord,int fedno, int slot)
 // Read the Trigger Primitive information from the Payload of the AB7.
 {
-  int station = ((firstWord>>60)&0x3);   // Bits 60-61 (first word) is the station (-1 (?))
+  int stationId = ((firstWord>>60)&0x3)+1;   // Bits 60-61 (first word) is the station (-1, in C++ convention)
   int superlayer = ((firstWord>>58)&0x3);   // Bits 58-59 (first word) is the superlayer (1-3) or a phi-primitive (0)
 
   int quality = ((firstWord>>35)&0x3F);   // Bits 35-40 (first word) is the quality of the TP
@@ -530,9 +530,9 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
 //v4  int chi2 = (secondWord&0x1F);             // Bits 0-4 (second word) is the chi2 of the fit (in v4)
 //v4  int tpindex = ((secondWord>>5)&0x07);     // Bits 5-7 (second word) is the index of this trigger primitive in the event (in v4)
 
-  if (0 || doHexDumping_) std::cout<<"OGDT-INFO: Dump + TP Info summary: BX: "<<bx<<std::endl; // TEST:" "<<32*bx/25<<std::endl;
+  if (0 || doHexDumping_) std::cout<<"OGDT-INFO: Dump + TP Info summary: BX: "<<bx<<" "<<" Q="<<quality<<" SL="<<superlayer<<std::endl; // TEST:" "<<32*bx/25<<std::endl;
 
-//  std::cout<<"            PRUEBA-TP(1): "<<bx<<" "<<station<<" "<<superlayer<<" Q="<<quality<<" "<<chi2<<" "<<jmTanPhi<<" "<<position<<std::endl;
+//  std::cout<<"            PRUEBA-TP(1): "<<bx<<" "<<stationId<<" "<<superlayer<<" Q="<<quality<<" "<<chi2<<" "<<jmTanPhi<<" "<<position<<std::endl;
 //  std::cout<<"            PRUEBA-TP(2): "<<chi2<<" "<<superlayer<<" "<<std::endl;
 
 //  std::cout<<"OGDTINFO Control version: "<<((firstWord>>31)&0xF)<<" "<<((secondWord>>52)&0x3FF)<<" "<<superlayer<<std::endl;
@@ -552,12 +552,12 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
 
   int wheel=2;   // FIXME: It is not clear who provides this? Hard-coded
   int sector=12;  // FIXME: It is not clear who provides this? Hard-coded
-  station=2;  // FIXME: hardcoded because the value in the payload is always 0 (?)
+  //if (stationId==1) stationId=2;  // for "v6" of the payload, before run 330160
 
   // To change to the global we need to indicate where we are... for the
   // superlayer (although it is not clear who provide the superlayer)
 
-  DTSuperLayerId slId(wheel,station,sector,superlayer);
+  DTSuperLayerId slId(wheel,stationId,sector,superlayer);
 
   double phiAngle=0;
   double phiBending=0;
@@ -580,7 +580,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   L1Phase2MuDTPhDigi trigprim(bx,   // ubx (m_bx)
                               wheel,   // uwh (m_wheel)
                               sector-1,   // usc (m_sector)  USING L1 trigger primitives convention.
-                              station,      // ust (m_station)
+                              stationId,      // ust (m_station)
                               superlayer,   // usl (m_superlayer)
 
                               uphi,   // uphi (_phiAngle)
@@ -742,7 +742,7 @@ void OglezDTAB7RawToDigi::sx5ChannelMapping_July2019 (int chanid, int *sl, int *
 {
   // The (*sl) value is ignored...
 
-  // From Cristina (and v6 of the payload aftyer fixing the problem with the layer inversion)
+  // From Cristina (and v6 of the payload after fixing the problem with the layer inversion)
 
   (*wire) = (chanid>>2)+1;
   (*layer) = (chanid&0x3)+1;
