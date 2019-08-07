@@ -512,7 +512,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   // The time may need to be corrected to use the "L1A time" as the reference:
   if (correctTPTimeToL1A_) time -= 25*bxCounter_;
 
-  int bx = time/25;  // Bunch crossing in LHC notation (as I understand the "0")
+  int bx = (int) round(time/25.);   // Getting the associated bunch-crossing (as indicated by Jaime how they computed in the emulator).
   if (bx<0) bx += 3564;  // BX in previous orbit!
 
 //v4  int position = ((firstWord)&0xFFFF);   // Bits 0-15 (first word) is the position (phi or theta depending on SL)
