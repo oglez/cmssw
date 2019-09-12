@@ -152,7 +152,8 @@ public:
 
       x_loc = (position/10.)+_xShifts[rawid];  // Converting to cm from milimeters!
 
-      if(station>=3) z_loc=1.8;  // "position" of the segment associated to the primitive
+      if(station>=3) z_loc=-1.8;  // "position" of the segment associated to the primitive
+      // Minus sign added on 2019_07_29 when bug was found in the emulator.
     }
 
     // The second step is to get the phi and the phiBending from the global
