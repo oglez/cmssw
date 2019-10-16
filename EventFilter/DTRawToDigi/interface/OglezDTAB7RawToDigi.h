@@ -1,20 +1,6 @@
 // Modified version of the DTAB7RawToDigi unpacker by Oscar Gonzalez to improve
 // readability and maintenance.
-// Started on (2019_01_22)
-
-//-------------------------------------------------
-//
-/**  \class DTAB7RawToDigi
- *
- *   L1 DT AB7 Raw-to-Digi
- *
- *
- *
- *   C. Heidemann - RWTH Aachen
- *   J. Troconiz  - UAM Madrid
- */
-//
-//--------------------------------------------------
+// Started on (2019_01_22) by Oscar Gonzalez (CIEMAT)
 
 #ifndef Oglez_AB7Test_DTAB7RawToDigi_h
 #define Oglez_AB7Test_DTAB7RawToDigi_h
@@ -35,6 +21,7 @@
 #include "DataFormats/L1DTTrackFinder/interface/L1Phase2MuDTPhContainer.h"
 
 #include <string>
+#include <queue>
 
 class DTReadOutMapping;
 
@@ -106,6 +93,8 @@ private:
 
   int lineCounter_;   ///< Counter of the read lines.
 
+  std::queue<long> stackWords_;    ///< Words that are read too early in the process.
+
   int newCRC_;  ///< Computed CRC during the reading process.
 
   int bxCounter_; ///< Value of the BX as provided by the header FED (and
@@ -132,19 +121,29 @@ private:
 
   /// Command to read a 64-bit word at the position of the pointer, increasing
   /// the counter.
-  inline void readLine (long *dataWord) {
+  inline void readLine (long *dataWord,int doCRC) {
+    // For v8 there could be words read ahead because the number of words for the primitive
+    // is not constant... if something in stackWord, we return that instead.
+    if (!stackWords_.empty()) {
+      (*dataWord)= stackWords_.front();  // FIFO
+      stackWords_.pop();
+      return;
+    }
     (*dataWord)= *((long*)fedLinePointer_);
     fedLinePointer_+=8;
     ++lineCounter_;
     if (doHexDumping_)
       std::cout << "OGINFO-INFO: Dump      HEX: "<<std::hex<<(*dataWord)<<std::dec<<std::endl;
+
+    if (doCRC==1) calcCRC(*dataWord);
+    else if (doCRC==-1) calcCRC((*dataWord)&0xFFFFFFFF0000FFFF);  // Excluding the CRC values themselves
   }
 
   /// Read the HIT information from the Payload of the AB7.
   void readAB7PayLoad_hitWord (long dataWord,int fedno,int slot);
 
   /// Read the Trigger Primitive information from the Payload of the AB7.
-  void readAB7PayLoad_triggerPrimitive (long firstWord,long secondWord,int fedno,int slot);
+  void readAB7PayLoad_triggerPrimitive (long firstWord,long secondWord,long thirdWord,int fedno,int slot);
 
   /// Routine to compute the CRC for checking out the raw data has been
   /// properly read.

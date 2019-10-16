@@ -1,27 +1,7 @@
 // Modified version of the DTAB7RawToDigi unpacker by Oscar Gonzalez to improve
 // readability and maintenance.
 // Started on (2019_01_22) as OglezDTAB7RawToDigi
-
-//-------------------------------------------------
-//
-//   Class: DTAB7RawToDigi
-//
-//   L1 DT AB7 Raw-to-Digi
-//
-//
-//
-//   Author :
-//   C. Heidemann - RWTH Aachen
-//   J. Troconiz  - UAM
-//   y el eterno retorno
-//
-//   Modification
-//    M.C Fouz - CIEMAT. 14 June 2017
-//    Interchanging Phi1 & Phi2 assigned wrongly
-//    Forcing the chamber to be in Wheel-1
-//        Since is the good type for the demonstrator
-//
-//--------------------------------------------------
+//             2019_10_16 Oscar Gonzalez: adapted to v8 of the payload.
 
 #include "../interface/OglezDTAB7RawToDigi.h"
 
@@ -208,7 +188,7 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
 
   FEDRawData dturosdata = data->FEDData(DTAB7FED);
   if ( dturosdata.size() == 0 ) {
-    if ( debug_ ) edm::LogWarning("oglez_dtab7_unpacker") << "No data for the requested FED "<<DTAB7FED <<std::endl;
+    if ( debug_ ) edm::LogWarning("oglez_dtab7_unpacker") << "No data for the requested FED "<<DTAB7FED << " (it does not seem to be included!)" <<std::endl;
     return;
   }
 
@@ -216,14 +196,15 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
   long dataWord=0;
   lineCounter_=0;
 
+  //It does not exist? Not needed anyway  stackWords_.clear();
+
   hitOrder_.clear();
 
   newCRC_ = 0xFFFF;
 
   // Reading the headers:
 
-  readLine(&dataWord);  // Reading the word
-  calcCRC(dataWord);
+  readLine(&dataWord,1);  // Reading the word
 
   // Bits 60-63 should be 0x05
   if ( ((dataWord>>60)&0x0F) != 0x5) {
@@ -247,8 +228,7 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
 
   if (0 || doHexDumping_) std::cout << "OGDT-INFO: Dump + Header/Block, BX: "<<bxCounter_<<std::endl;
 
-  readLine(&dataWord);   // Second word of the header
-  calcCRC(dataWord);
+  readLine(&dataWord,1);   // Second word of the header
 
   int nslots = (dataWord>>52) & 0xF; // bits 52-55 Number of AMC/slots
 
@@ -260,8 +240,7 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
   // Reading the information for the slots: one word per AMC
   std::map<int,int> slot_size;
   for (int j=0;j<nslots;++j) {
-    readLine(&dataWord);   // AMC word for the slot
-    calcCRC(dataWord);
+    readLine(&dataWord,1);   // AMC word for the slot
 
     int slot=(dataWord>>16)&0xF; // Bits 16-19:
     if (slot<1 || slot>12) {
@@ -276,8 +255,7 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
 
   // Reading all the payloads for the AB7... each AMC
   for (int j=0;j<nslots;++j) {
-    readLine(&dataWord);  // First word header AMC
-    calcCRC(dataWord);
+    readLine(&dataWord,1);  // First word header AMC
 
     int slot = (dataWord>>56)&0xF;      // bit 56-59: slot number
     if (slot<1 || slot>12) {
@@ -305,22 +283,24 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
    if (0 || doHexDumping_) std::cout << "OGDT-INFO: Dump + AMC Header 1, BX: "<<bx<<" event: "<<event<<std::endl;
 
     // Second word header AMC: nothing relevant
-    readLine(&dataWord);
-    calcCRC(dataWord);
+    readLine(&dataWord,1);
 
-    if (0 || doHexDumping_) std::cout << "OGDT-INFO: Dump + number of slots: "<<slot_size[slot]<<std::endl;
+    if (0 || doHexDumping_) std::cout << "OGDT-INFO: Dump + number of slots: "<<slot_size[slot]
+                                      <<" (digis/TP *words* are: "<<slot_size[slot]-3<<")"<<std::endl;
 
     // Check on the number of slots... if large, we exclude the entry.
     if (slot_size[slot]>200) {
       if ( debug_ ) edm::LogWarning("oglez_dtab7_unpacker")
                       << "AMC Slot has too many digis/TP: "<<slot_size[slot]<<std::endl;
-      if (slot_size[slot]>1000) return;  // Problematic events... code crashes due to crappy/crazy values?
+      if (slot_size[slot]>1000) {
+        edm::LogWarning("oglez_dtab7_unpacker")<< "event skipped because AMC Slot has too many digis/TP: "<<slot_size[slot]<<std::endl;
+        return;  // Problematic events... code crashes due to crappy/crazy values?
+      }
     }
 
     // Reading the hits or trigger primitives (words!)
-    for (int k=slot_size[slot]-1;k>2;--k) { // Just a counter of how many!
-      readLine(&dataWord);
-      calcCRC(dataWord);
+    for (int k=slot_size[slot]-1;k>2;--k) { // Just a counter of how many "words"... need to reduce for each line
+      readLine(&dataWord,1);
 
       // Reading the AB7PayLoad:
       int type=(dataWord>>60)&0xF; // Bits 60-63 gives us the type of information:
@@ -330,17 +310,18 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
       if (type==1) {  // Hit information: 2 hits of 30 bits!
         readAB7PayLoad_hitWord(dataWord,DTAB7FED,slot);
       }
-      else if (((type>>2)&0x3)==2) {  // First trigger word... The other should come after wards!
+      else if (((type>>2)&0x3)==2) {  // First trigger word... The other should come afterwards!
         long firstWord=dataWord;
 
         // The second word is optional... not for correlated superlayer
-        if ( ((firstWord>>58)&0x3)==0) {  // SL=0, correlated primitive!
-          dataWord=(0xCL<<60);
-        }
-        else {
-          readLine(&dataWord);  // Reading the second word
-          calcCRC(dataWord);
-          --k;
+        dataWord=(0xCL<<60);
+        if (((firstWord>>58)&0x3)!=0) {  // SL==0, correlated primitive! (we read it for the others)
+          // We do not read it if we are not supposed to read it!
+          if (k>3) {
+            readLine(&dataWord,1);  // Reading the second word
+            --k;
+          }
+          else edm::LogWarning("oglez_dtab7_unpacker") << "Wrong number of words to be read for a trigger primitive " <<slot_size[slot]<<" "<<k<<std::endl;
         }
 
 //        if ( ((firstWord>>58)&0x3)==0) {  // SL=0, correlated primitive!
@@ -350,7 +331,20 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
 
         // Checking it is fine...
         if (((dataWord>>60)&0xF)==0xC)  {  // It is ok! (v6)
-          readAB7PayLoad_triggerPrimitive(firstWord,dataWord,DTAB7FED,slot);
+          long secondWord=dataWord;
+
+          // In v8 there could be a third word... that could not be ther in previous versions
+          if (k>3) {
+            readLine(&dataWord,1);
+            if (!( ((dataWord>>60)&0xF)==0xD) ) {  // We only read the
+              stackWords_.push(dataWord);   // It is NOT a word of the trigger primitive... store in the FIFO
+              dataWord=0;  // No third word for the primitives.
+            }
+            else --k;   // Note offset!
+          }
+          else dataWord=0;
+
+          readAB7PayLoad_triggerPrimitive(firstWord,secondWord,dataWord,DTAB7FED,slot);
         }
         else if (debug_) edm::LogWarning("oglez_dtab7_unpacker")
                            << "Expected second trigger word that is not there "
@@ -365,19 +359,17 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
     }
 
     // Trailer word of the AMC information
-    readLine(&dataWord);
-    calcCRC(dataWord);
+    readLine(&dataWord,1);
   }
 
   // Trailer words for checks
 
-  readLine(&dataWord);   // First trailer word (for the block) is not used, but it has some check information
-  calcCRC(dataWord);
+  readLine(&dataWord,1);   // First trailer word (for the block) is not used, but it has some check information
 
   if (doHexDumping_) std::cout << "OGDT-INFO: Dump + Trailer/muFOV, BX: "<<(dataWord&0xFFF)<<std::endl;
 
-  readLine(&dataWord);   // Second trailer word (final one for the FED)
-  calcCRC(dataWord&0xFFFFFFFF0000FFFF);   // EXCLUYENDO LOS VALORES DE CRC
+  readLine(&dataWord,-1);   // Second trailer word (final one for the FED)
+ //OLD calcCRC(dataWord&0xFFFFFFFF0000FFFF);   // EXCLUYENDO LOS VALORES DE CRC
 
   if ( ((dataWord>>60)&0xF)!=0xA) {   // Bits 60-63 are 0xA (control)
     if ( debug_ )  edm::LogWarning("oglez_dtab7_unpacker")
@@ -431,11 +423,12 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
     // I understand from Bilal's code that what it is called "offset" is in fact the BX in V3:
     int bx = (hitinfo>>5)&0xFFF; // positions   5 -> 16
 
-    if (doHexDumping_) std::cout<<"OGDT-INFO: Dump + DIGI Info summary: BX: "<<bx<<std::endl;
+    if (doHexDumping_) std::cout<<"OGDT-INFO: Dump + DIGI Info summary: BX: "<<bx; //OLD <<std::endl;
 
     if (bx==0xFFF) {  // invalid (empty, not-needed because of odd-number) hits
       //if ( debug_ ) edm::LogWarning("oglez_dtab7_unpacker")
       //              << "Empty/invalid hit information because of an odd number of hits in the slot ";
+      if (doHexDumping_) std::cout<<std::endl;
       continue;
     }
 
@@ -492,18 +485,24 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
     while (tdccounts<0) tdccounts+=114048;// 32*3564;
 
     DTDigi digi(wire,tdccounts, hitOrder_[chCode]);
+    if (doHexDumping_) std::cout<<" wheel: "<<wheelId<<" sector: "<<sectorId<<" St: "<<stationId
+                                <<" SL: "<<slId<<" Layer: "<<layerId<<" wire: "<<wire<<" TDC counts: "
+                                <<tdccounts<<" time: "<<digi.time()<<std::endl;
 
-    // To convert digi.time() en "BX" hay que dividir por 25, sumarle el BX_fed
-    // y si lo que sale es mayor que 3564, restarle ese número.
+    // To convert digi.time() into "BX" one should divide by 25 (rounding
+    // properly instead of truncating?), add the BX_fed and if it is greater
+    // than 3564, subtract that number.
 
     digis_->insertDigi(detId.layerId(),digi);
   }  // While for the two hits!
 }
 
 //-----------------------------------------------------------------------
-void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long secondWord,int fedno, int slot)
+void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long secondWord,long thirdWord,int fedno, int slot)
 // Read the Trigger Primitive information from the Payload of the AB7.
 {
+  //std::cout<<"TP Words: "<<std::hex<<firstWord<<" "<<secondWord<<" "<<thirdWord<<std::dec<<std::endl;
+
   int stationId = ((firstWord>>60)&0x3)+1;   // Bits 60-61 (first word) is the station (-1, in C++ convention)
   int superlayer = ((firstWord>>58)&0x3);   // Bits 58-59 (first word) is the superlayer (1-3) or a phi-primitive (0)
 
@@ -512,7 +511,14 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   // The time may need to be corrected to use the "L1A time" as the reference:
   if (correctTPTimeToL1A_) time -= 25*bxCounter_;
 
-  int bx = (int) round(time/25.);   // Getting the associated bunch-crossing (as indicated by Jaime how they computed in the emulator).
+  int bx = (int) round(time/25.);  // Getting the associated bunch-crossing (as indicated by Jaime how they computed in the emulator).
+  // Originally this was
+  // int bx = time/25;
+  // as I understood the "0" for the LHC bunch-crossing definition, but in
+  // practice since these times are all corrected to be centered in the bunch
+  // crossing (that Jaime tells me it is on "0" because it is when the
+  // collisions happens).
+
   if (bx<0) bx += 3564;  // BX in previous orbit!
 
 //v4  int position = ((firstWord)&0xFFFF);   // Bits 0-15 (first word) is the position (phi or theta depending on SL)
@@ -529,6 +535,12 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   int chi2 = ((firstWord>>30)&0x1F);    // Bits 30-34 (first word) is the chi2 (in v6)
 //v4  int chi2 = (secondWord&0x1F);             // Bits 0-4 (second word) is the chi2 of the fit (in v4)
 //v4  int tpindex = ((secondWord>>5)&0x07);     // Bits 5-7 (second word) is the index of this trigger primitive in the event (in v4)
+
+  // In v8 they put a third word with the complete chi2... when it is there.
+  if (thirdWord!=0) {
+    chi2 = ((thirdWord)&0xFFFFFF);   // Bits 0-23 is the full chi2
+  }
+  //else std::cout<<"OGDT-ERROR: We were expecting something in the third word of the TP!"<<std::endl;
 
   if (0 || doHexDumping_) std::cout<<"OGDT-INFO: Dump + TP Info summary: BX: "<<bx<<" "<<" Q="<<quality<<" SL="<<superlayer<<std::endl; // TEST:" "<<32*bx/25<<std::endl;
 

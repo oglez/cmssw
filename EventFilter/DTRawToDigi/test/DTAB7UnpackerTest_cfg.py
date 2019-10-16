@@ -2,6 +2,7 @@
 # Testing configuration file for the Phase-2 unpacker.
 #
 # Written by Oscar Gonzalez (2019_06_15)
+#                            2019_10_16  adapted to v8 of the payload
 #
 
 import FWCore.ParameterSet.Config as cms
@@ -11,14 +12,14 @@ process = cms.Process("DTNT",eras.Run2_2018)  ## ESTO ES LA HOSTIA DE LIOSO CON 
 process.load('Configuration/StandardSequences/Services_cff')
 process.load("Configuration.StandardSequences.FrontierConditions_GlobalTag_condDBv2_cff")  #DB v2, at least since GR_E_V42
 
-process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(101) )   # Number of events
+process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(1001) )   # Number of events
 
 process.load("FWCore.MessageLogger.MessageLogger_cfi")
 process.MessageLogger.cerr.FwkReport.reportEvery = 100
 
 process.source = cms.Source("PoolSource",fileNames = cms.untracked.vstring(
-        'file:/eos/cms/store/data/Commissioning2019/Cosmics/RAW/v1/000/330/161/00000/969B8A72-1A03-224C-9B2F-CA479658075D.root'
-        ))
+    'file:/eos/cms/store/data/Commissioning2019/MiniDaq/RAW/v1/000/332/599/00000/EF84A1A1-AF04-CA4F-A910-B71D0AD45553.root'
+))
 
 process.options = cms.untracked.PSet(wantSummary = cms.untracked.bool(True))
 
