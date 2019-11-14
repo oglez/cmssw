@@ -1,6 +1,7 @@
 // Modified version of the DTAB7RawToDigi unpacker by Oscar Gonzalez to improve
 // readability and maintenance.
 // Started on (2019_01_22) by Oscar Gonzalez (CIEMAT)
+//             2019_11_14  Oscar Gonzalez: adapted to cope vor v7/v8 and v9 at the same time.
 
 #ifndef Oglez_AB7Test_DTAB7RawToDigi_h
 #define Oglez_AB7Test_DTAB7RawToDigi_h
@@ -99,6 +100,8 @@ private:
 
   int bxCounter_; ///< Value of the BX as provided by the header FED (and
                   ///< checked with the AMC information).
+
+  bool isV9_;  ///< To indicate whether is v9 (and later) or version 7/8 of the payload.
 
   std::map<uint32_t, int> hitOrder_;  ///< Hit counter
 

@@ -2,6 +2,7 @@
 // readability and maintenance.
 // Started on (2019_01_22) as OglezDTAB7RawToDigi
 //             2019_10_16 Oscar Gonzalez: adapted to v8 of the payload.
+//             2019_11_14 Oscar Gonzalez: adapted to v9 of the payload.
 
 #include "../interface/OglezDTAB7RawToDigi.h"
 
@@ -53,6 +54,13 @@ OglezDTAB7RawToDigi::OglezDTAB7RawToDigi(const edm::ParameterSet& pset)
   feds_ = pset.getUntrackedParameter<std::vector<int> >("feds", std::vector<int>());
 
   rawToken_ = consumes<FEDRawDataCollection>(DTAB7InputTag_);
+
+  hitOrder_.clear();
+
+  newCRC_ = 0xFFFF;
+
+  bxCounter_=0;
+  isV9_=false;
 
   // Choosing the channel mapping to use:
   auto val = pset.getUntrackedParameter<std::string>("channelMapping","june2019");
@@ -202,6 +210,9 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
 
   newCRC_ = 0xFFFF;
 
+  bxCounter_=0;
+  isV9_=false;
+
   // Reading the headers:
 
   readLine(&dataWord,1);  // Reading the word
@@ -282,8 +293,12 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
 
    if (0 || doHexDumping_) std::cout << "OGDT-INFO: Dump + AMC Header 1, BX: "<<bx<<" event: "<<event<<std::endl;
 
-    // Second word header AMC: nothing relevant
+    // Second word header AMC:
     readLine(&dataWord,1);
+
+    int fw_version = (dataWord>>7)&0x01FF; // Bits 7-15 gives the the fw version (?)
+
+    if (fw_version>=148) isV9_=true;   // Nueva estructura... tiene truco para las "trigger primitives".
 
     if (0 || doHexDumping_) std::cout << "OGDT-INFO: Dump + number of slots: "<<slot_size[slot]
                                       <<" (digis/TP *words* are: "<<slot_size[slot]-3<<")"<<std::endl;
@@ -501,7 +516,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
 void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long secondWord,long thirdWord,int fedno, int slot)
 // Read the Trigger Primitive information from the Payload of the AB7.
 {
-  //std::cout<<"TP Words: "<<std::hex<<firstWord<<" "<<secondWord<<" "<<thirdWord<<std::dec<<std::endl;
+  //std::cout<<"TP Words: "<<std::hex<<firstWord<<" "<<secondWord<<" "<<thirdWord<<std::dec<<" "<<isV9_<<std::endl;
 
   int stationId = ((firstWord>>60)&0x3)+1;   // Bits 60-61 (first word) is the station (-1, in C++ convention)
   int superlayer = ((firstWord>>58)&0x3);   // Bits 58-59 (first word) is the superlayer (1-3) or a phi-primitive (0)
@@ -521,20 +536,28 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
 
   if (bx<0) bx += 3564;  // BX in previous orbit!
 
-//v4  int position = ((firstWord)&0xFFFF);   // Bits 0-15 (first word) is the position (phi or theta depending on SL)
-  int position = ((firstWord)&0x7FFF);   // Bits 0-14 (first word) is the position (phi or theta depending on SL)
+  // Position, slope and chi2 are different in the "V9" payload
 
-//v4  int jmTanPhi = ((firstWord>>16)&0x7FFF);     // Bits 16-30 (first word) is the slope (phi or theta depending on SL)
-  int jmTanPhi = ((firstWord>>15)&0x7FFF);     // Bits 15-29 (first word) is the slope (phi or theta depending on SL)
+  int position = ((firstWord)&0x01FFFF);   // Bits 0-16 (first word) is the position (phi or theta depending on SL)
+  int jmTanPhi = ((firstWord>>17)&0x7FFF); // Bits 17-31 (first word) is the slope (phi or theta depending on SL)
+  int chi2=0;  // No information in V9 in the first word
+
+  if (!isV9_) {
+    //v4  int position = ((firstWord)&0xFFFF);   // Bits 0-15 (first word) is the position (phi or theta depending on SL)
+    position = ((firstWord)&0x7FFF);   // Bits 0-14 (first word) is the position (phi or theta depending on SL)
+
+    //v4  int jmTanPhi = ((firstWord>>16)&0x7FFF);     // Bits 16-30 (first word) is the slope (phi or theta depending on SL)
+    jmTanPhi = ((firstWord>>15)&0x7FFF);     // Bits 15-29 (first word) is the slope (phi or theta depending on SL)
+
+    chi2 = ((firstWord>>30)&0x1F);    // Bits 30-34 (first word) is the chi2 (in v6)
+    //v4  int chi2 = (secondWord&0x1F);             // Bits 0-4 (second word) is the chi2 of the fit (in v4)                               //v4  int tpindex = ((secondWord>>5)&0x07);     // Bits 5-7 (second word) is the index of this trigger primitive in the event (in v4)
+  }
+
   // Acording to Jose Manuel (email 2019_04_03) this is 4096*tan(phi)
   // but we we need to account for the sign.
   if ( ((jmTanPhi>>14)&0x01)==0x01) { // Negative value!
     jmTanPhi = (jmTanPhi-32768);   // (1<<15)    // -1*(((~slope)&0x7FFF)+1);
   }
-
-  int chi2 = ((firstWord>>30)&0x1F);    // Bits 30-34 (first word) is the chi2 (in v6)
-//v4  int chi2 = (secondWord&0x1F);             // Bits 0-4 (second word) is the chi2 of the fit (in v4)
-//v4  int tpindex = ((secondWord>>5)&0x07);     // Bits 5-7 (second word) is the index of this trigger primitive in the event (in v4)
 
   // In v8 they put a third word with the complete chi2... when it is there.
   if (thirdWord!=0) {
@@ -573,8 +596,13 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
 
   double phiAngle=0;
   double phiBending=0;
-  OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/4.,  // Using mm as this argument (JM uses mm as metric)
-                                                          jmTanPhi/4096.,quality,&phiAngle,&phiBending);
+  if (isV9_)  // Better resolution in position information.
+    OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/16.,  // Using mm as this argument (JM uses mm as metric)
+                                                            jmTanPhi/4096.,quality,&phiAngle,&phiBending);
+  else
+    OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/4.,  // Using mm as this argument (JM uses mm as metric)
+                                                            jmTanPhi/4096.,quality,&phiAngle,&phiBending);
+
 
   // Adding the trigger primitive, perhaps with some information modified
   int uind = 0;

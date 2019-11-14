@@ -18,7 +18,7 @@ process.load("FWCore.MessageLogger.MessageLogger_cfi")
 process.MessageLogger.cerr.FwkReport.reportEvery = 100
 
 process.source = cms.Source("PoolSource",fileNames = cms.untracked.vstring(
-    'file:/eos/cms/store/data/Commissioning2019/MiniDaq/RAW/v1/000/332/599/00000/EF84A1A1-AF04-CA4F-A910-B71D0AD45553.root'
+    'file:/eos/cms/store/data/Commissioning2019/MiniDaq/RAW/v1/000/333/413/00000/FC5B8DCC-F475-B145-98A6-2DA07749A3DF.root'
 ))
 
 process.options = cms.untracked.PSet(wantSummary = cms.untracked.bool(True))
