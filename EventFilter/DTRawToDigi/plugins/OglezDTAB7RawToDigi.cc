@@ -3,6 +3,8 @@
 // Started on (2019_01_22) as OglezDTAB7RawToDigi
 //             2019_10_16 Oscar Gonzalez: adapted to v8 of the payload.
 //             2019_11_14 Oscar Gonzalez: adapted to v9 of the payload.
+//             2020_02_03 Oscar Gonzalez: using edm::FileInPath for files!
+//                                        also using option for 30 TDC per BX.
 
 #include "../interface/OglezDTAB7RawToDigi.h"
 
@@ -88,28 +90,8 @@ OglezDTAB7RawToDigi::OglezDTAB7RawToDigi(const edm::ParameterSet& pset)
 
   // Transformation to the center of the camera from JM system.
 
-  OglezTransformJMSystem::instance()->xShiftConfigure(pset.getParameter<std::string>("xShiftFilename"));
-
-  std::ifstream shiftfile(pset.getParameter<std::string>("xShiftFilename"));
-  int rawId;
-  float sh;
-  while (shiftfile.good()) {
-    shiftfile >> rawId >> sh;
-    xShifts_[rawId] = sh;
-  }
-  shiftfile.close();
-
-  shiftfile.open(pset.getParameter<std::string>("zShiftFilename"));
-  while (shiftfile.good()) {
-    shiftfile >> rawId >> sh;
-    zShifts_[rawId] = sh;
-  }
-  shiftfile.close();
-
-  if (zShifts_.size()==0 || xShifts_.size()==0) {
-    std::cerr<<"OGDT-ERROR: Shifts for the reference system transformations not found! "
-             <<zShifts_.size()<<" "<<xShifts_.size()<<std::endl;
-  }
+  OglezTransformJMSystem::instance()->xShiftConfigure(pset.getParameter<edm::FileInPath>("xShiftFilename").fullPath());
+  OglezTransformJMSystem::instance()->zShiftConfigure(pset.getParameter<edm::FileInPath>("zShiftFilename").fullPath());
 }
 
 //-----------------------------------------------------------------------
@@ -264,6 +246,8 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
     if (0 || doHexDumping_) std::cout << "OGDT-INFO: Dump + AMC: "<<slot<<" size: "<<slot_size[slot]<<std::endl;
   }
 
+  int fw_version = -1;  // For checks!
+
   // Reading all the payloads for the AB7... each AMC
   for (int j=0;j<nslots;++j) {
     readLine(&dataWord,1);  // First word header AMC
@@ -296,12 +280,19 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
     // Second word header AMC:
     readLine(&dataWord,1);
 
-    int fw_version = (dataWord>>7)&0x01FF; // Bits 7-15 gives the the fw version (?)
+    if (fw_version==-1) {
+      fw_version = (dataWord>>7)&0x01FF; // Bits 7-15 gives the the fw version
 
-    if (fw_version>=148) isV9_=true;   // Nueva estructura... tiene truco para las "trigger primitives".
+      //std::cout<<"Firmware version: "<<fw_version<<std::endl;
+      if (fw_version>=148) isV9_=true;   // New structure of the payload for the trigger primitives!
+    }
+    else if (fw_version!=((dataWord>>7)&0x01FF)) {
+      edm::LogWarning("oglez_dtab7_unpacker")
+        <<"The firmware version is changing depending on the AMC in the same event? Please check "<<fw_version<<" "<<((dataWord>>7)&0x01FF)<<std::endl;
+    }
 
     if (0 || doHexDumping_) std::cout << "OGDT-INFO: Dump + number of slots: "<<slot_size[slot]
-                                      <<" (digis/TP *words* are: "<<slot_size[slot]-3<<")"<<std::endl;
+                                      <<" (digis/TP *words* are: "<<slot_size[slot]-3<<") fw_version="<<fw_version<<std::endl;
 
     // Check on the number of slots... if large, we exclude the entry.
     if (slot_size[slot]>200) {
@@ -493,13 +484,21 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
     // For tests... storing information (in 1/25 ns units... according to Cristina's equation)
     // Although I discovered that to use the legacy we should store "legacy TDC counts"
     // There is a *25 to convert from "BX units" to ns
-    // There is a *(32/25) to convert from ns to TDCCounts  (and it needs to be positive!)
+    // There is a *(32/25) to convert from ns to TDCCounts (and it needs to be positive!)
     // We need to subtract 1 in the tdc_hit, because it goes from 1-30, due to some
     //            convention (Alvaro indicated so)
-    int tdccounts = int(32*(bx+(tdc_hit_t-1)/30.)+0.5)-32*bxCounter_;
-    while (tdccounts<0) tdccounts+=114048;// 32*3564;
+    // {
+    //   int tdccounts = int(32*(bx+(tdc_hit_t-1)/30.)+0.5)-32*bxCounter_;
+    //   while (tdccounts<0) tdccounts+=114048;// 32*3564;
+    //   DTDigi digi(wire,tdccounts, hitOrder_[chCode]);
+    // }
 
-    DTDigi digi(wire,tdccounts, hitOrder_[chCode]);
+    // From 2020_02_03 we could just use directly the 30 TDC/BX when building the DIGIs...
+    int tdccounts = 30*bx+(tdc_hit_t-1) - 30*bxCounter_;  // 30 TDC/BX
+    while (tdccounts<0) tdccounts+=106920;// 30*3564;
+
+    DTDigi digi(wire,tdccounts, hitOrder_[chCode],30);   // Now using 30 instead of 32 tdc per BX
+
     if (doHexDumping_) std::cout<<" wheel: "<<wheelId<<" sector: "<<sectorId<<" St: "<<stationId
                                 <<" SL: "<<slId<<" Layer: "<<layerId<<" wire: "<<wire<<" TDC counts: "
                                 <<tdccounts<<" time: "<<digi.time()<<std::endl;
@@ -594,6 +593,9 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
 
   DTSuperLayerId slId(wheel,stationId,sector,superlayer);
 
+//  std::cout<<"TESTING VALUES: "<<position<<" "<<jmTanPhi<<" "<<quality<<" "<<std::endl;
+
+
   double phiAngle=0;
   double phiBending=0;
   if (isV9_)  // Better resolution in position information.
@@ -602,7 +604,6 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   else
     OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/4.,  // Using mm as this argument (JM uses mm as metric)
                                                             jmTanPhi/4096.,quality,&phiAngle,&phiBending);
-
 
   // Adding the trigger primitive, perhaps with some information modified
   int uind = 0;

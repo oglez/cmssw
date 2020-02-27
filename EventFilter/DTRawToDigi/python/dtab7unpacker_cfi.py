@@ -8,6 +8,6 @@ dtAB7unpacker = cms.EDProducer("OglezDTAB7RawToDigi",
                                doHexDumping = cms.untracked.bool(False),
                                rawTPVars = cms.untracked.bool(False),
                                channelMapping = cms.untracked.string("july2019"),
-                               xShiftFilename = cms.string(os.environ['CMSSW_BASE']+'/src/L1Trigger/DTPhase2Trigger/data/wire_rawId_x.txt'),
-                               zShiftFilename = cms.string(os.environ['CMSSW_BASE']+'/src/L1Trigger/DTPhase2Trigger/data/wire_rawId_z.txt')
+                               xShiftFilename = cms.FileInPath('L1Trigger/DTPhase2Trigger/data/wire_rawId_x.txt'),
+                               zShiftFilename = cms.FileInPath('L1Trigger/DTPhase2Trigger/data/wire_rawId_z.txt')
 )

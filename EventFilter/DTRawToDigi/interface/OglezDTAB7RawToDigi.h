@@ -2,6 +2,8 @@
 // readability and maintenance.
 // Started on (2019_01_22) by Oscar Gonzalez (CIEMAT)
 //             2019_11_14  Oscar Gonzalez: adapted to cope vor v7/v8 and v9 at the same time.
+//             2020_02_03  Oscar Gonzalez: improving the way the shifts for the channels are processed.
+//
 
 #ifndef Oglez_AB7Test_DTAB7RawToDigi_h
 #define Oglez_AB7Test_DTAB7RawToDigi_h
@@ -76,14 +78,6 @@ private:
 
   /// Feds that should be read in the task.
   std::vector<int> feds_;
-
-  /// Maps with the shifts in X for the transformation from JM's system to the
-  /// center of the chambers (using some channel ID as keys).
-  std::map<int,float> xShifts_;
-
-  /// Maps with the shifts in Z for the transformation from JM's system to the
-  /// center of the chambers (using some channel ID as keys).
-  std::map<int,float> zShifts_;
 
   // Additional variables
 

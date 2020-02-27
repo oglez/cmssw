@@ -6,6 +6,7 @@
 /// <PRE>
 /// Written by Oscar Gonzalez (2019_06_11)
 ///                            2019_06_28  Using the transformation for the correlated primitives (SL=0)
+///                            2020_02_03  Improving the way the input information is read.
 /// </PRE>
 
 #ifndef __DTOglezAna_OglezTransformJMSystem_h
@@ -45,8 +46,8 @@ class OglezTransformJMSystem
 
   // Configuration parameters needed for the transformation
 
-  std::map<int,float> _xShifts;  ///< Shifts in X as
-
+  std::map<int,float> _xShifts;  ///< Shifts in X as stored in the file.
+  std::map<int,float> _zShifts;  ///< Shifts in Z as stored in the file.
 
   /// Private constructor for a Singleton.
   explicit OglezTransformJMSystem (void) {}
@@ -68,10 +69,10 @@ public:
     _instance=nullptr;
   }
 
-  /// Configuration of the hardcoded files to perform the transformation.
+  /// Configuration of the file to perform the transformation (information on x-shifts).
   void xShiftConfigure (std::string xshiftfile) {
     if (_xShifts.size()>0) {
-      std::cerr<<"OGDT-WARNING: Not possible to set (again) the shifts on the X variable for OglezTransformJMSystem"<<std::endl;
+      std::cerr<<"OGDT-WARNING: Not possible to re-set the shifts on the X variable for OglezTransformJMSystem"<<std::endl;
       return;
     }
 
@@ -90,12 +91,42 @@ public:
     }
   }
 
-  /// Get the value of the shift for a given SL in a given chamber.
+  /// Configuration of the file to perform the transformation (information on x-shifts).
+  void zShiftConfigure (std::string zshiftfile) {
+    if (_zShifts.size()>0) {
+      std::cerr<<"OGDT-WARNING: Not possible to re-set the shifts on the Z variable for OglezTransformJMSystem"<<std::endl;
+      return;
+    }
+
+    std::ifstream shiftfile(zshiftfile);
+    int rawId;
+    float sh;
+    while (shiftfile.good()) {
+      shiftfile >> rawId >> sh;
+      _zShifts[rawId] = sh;
+    }
+    shiftfile.close();
+
+    if (_zShifts.size()==0) {
+      std::cerr<<"OGDT-ERROR: Shifts on the Z variable for the reference system transformations not found! "
+               <<_zShifts.size()<<std::endl;
+    }
+  }
+
+  /// Get the value of the X-shift for a given SL in a given chamber.
   float getXShift (int wheel, int sector, int station, int sl) {
     DTWireId wireId(wheel,station,sector,sl,2,1);
 
     int rawid = wireId.rawId();
     return _xShifts[rawid];
+  }
+
+  /// Get the value of the Z-shift for a given SL in a given chamber.
+  float getZShift (int wheel, int sector, int station, int sl) {
+    DTWireId wireId(wheel,station,sector,sl,2,1);
+
+    int rawid = wireId.rawId();
+    return _zShifts[rawid];
   }
 
   /// Apply the transformation to extract Phi and PhiBending.
