@@ -25,10 +25,7 @@ process.options = cms.untracked.PSet(wantSummary = cms.untracked.bool(True))
 
 process.GlobalTag.globaltag = '101X_dataRun2_Express_v7' ## 2018 data
 
-process.load("Geometry.CMSCommonData.cmsIdealGeometryXML_cff")
-process.load("Geometry.DTGeometry.dtGeometry_cfi")
-process.DTGeometryESModule.applyAlignment = False
-
+process.load('Configuration/StandardSequences/GeometryRecoDB_cff')
 
 # Setting the module for the SX5 unpacker we are testing!
 process.load("EventFilter.DTRawToDigi.dtab7unpacker_cfi")
