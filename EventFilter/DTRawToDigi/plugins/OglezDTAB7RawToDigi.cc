@@ -5,6 +5,8 @@
 //             2019_11_14 Oscar Gonzalez: adapted to v9 of the payload.
 //             2020_02_03 Oscar Gonzalez: using edm::FileInPath for files!
 //                                        also using option for 30 TDC per BX.
+//             2020_10_23 Oscar Gonzalez: deactivating the correction to force negative times.
+
 
 #include "../interface/OglezDTAB7RawToDigi.h"
 
@@ -375,7 +377,7 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
   if (doHexDumping_) std::cout << "OGDT-INFO: Dump + Trailer/muFOV, BX: "<<(dataWord&0xFFF)<<std::endl;
 
   readLine(&dataWord,-1);   // Second trailer word (final one for the FED)
- //OLD calcCRC(dataWord&0xFFFFFFFF0000FFFF);   // EXCLUYENDO LOS VALORES DE CRC
+  //calcCRC(dataWord&0xFFFFFFFF0000FFFF);   // EXCLUYENDO LOS VALORES DE CRC
 
   if ( ((dataWord>>60)&0xF)!=0xA) {   // Bits 60-63 are 0xA (control)
     if ( debug_ )  edm::LogWarning("oglez_dtab7_unpacker")
@@ -429,7 +431,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
     // I understand from Bilal's code that what it is called "offset" is in fact the BX in V3:
     int bx = (hitinfo>>5)&0xFFF; // positions   5 -> 16
 
-    if (doHexDumping_) std::cout<<"OGDT-INFO: Dump + DIGI Info summary: BX: "<<bx; //OLD <<std::endl;
+    if (doHexDumping_) std::cout<<"OGDT-INFO: Dump + DIGI Info summary: BX: "<<bx;
 
     if (bx==0xFFF) {  // invalid (empty, not-needed because of odd-number) hits
       //if ( debug_ ) edm::LogWarning("oglez_dtab7_unpacker")
@@ -495,11 +497,12 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
 
     // From 2020_02_03 we could just use directly the 30 TDC/BX when building the DIGIs...
     int tdccounts = 30*bx+(tdc_hit_t-1) - 30*bxCounter_;  // 30 TDC/BX
-    while (tdccounts<0) tdccounts+=106920;// 30*3564;
+    // From 2020_10_23 we do not correct the negative counts.
+    //while (tdccounts<0) tdccounts+=106920;// 30*3564;   // Comment this line if you want even negative times
 
     DTDigi digi(wire,tdccounts, hitOrder_[chCode],30);   // Now using 30 instead of 32 tdc per BX
 
-    if (doHexDumping_) std::cout<<" wheel: "<<wheelId<<" sector: "<<sectorId<<" St: "<<stationId
+    if (0 || doHexDumping_) std::cout<<" wheel: "<<wheelId<<" sector: "<<sectorId<<" St: "<<stationId
                                 <<" SL: "<<slId<<" Layer: "<<layerId<<" wire: "<<wire<<" TDC counts: "
                                 <<tdccounts<<" time: "<<digi.time()<<std::endl;
 
