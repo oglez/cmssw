@@ -496,9 +496,18 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
     // }
 
     // From 2020_02_03 we could just use directly the 30 TDC/BX when building the DIGIs...
-    int tdccounts = 30*bx+(tdc_hit_t-1) - 30*bxCounter_;  // 30 TDC/BX
+    //int tdccounts = 30*bx+(tdc_hit_t-1) - 30*bxCounter_;  // 30 TDC/BX
     // From 2020_10_23 we do not correct the negative counts.
     //while (tdccounts<0) tdccounts+=106920;// 30*3564;   // Comment this line if you want even negative times
+
+    // From 2020_10_31 we use the following apprach to avoid the "0" being a
+    // cut of the BX identifiers
+    int bxcorr = (bx - bxCounter_);
+    while (bxcorr>1782) bxcorr-=3564;
+    while (bxcorr<-1781) bxcorr+=3564;
+    int tdccounts = 30*bxcorr+(tdc_hit_t-1);  // 30 TDC/BX
+
+    // Creating the DT digi in the standard CMSSW class
 
     DTDigi digi(wire,tdccounts, hitOrder_[chCode],30);   // Now using 30 instead of 32 tdc per BX
 
