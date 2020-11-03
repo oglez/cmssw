@@ -545,7 +545,11 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   // crossing (that Jaime tells me it is on "0" because it is when the
   // collisions happens).
 
-  if (bx<0) bx += 3564;  // BX in previous orbit!
+  // On 2020_11_03 we decided to change the reference of BX counting to use
+  //negative counting as for the digis!
+  //if (bx<0) bx += 3564; // BX in previous orbit!
+  while (bx>1782) bx -= 3564;
+  while (bx<-1781) bx += 3564;
 
   // Position, slope and chi2 are different in the "V9" payload
 
