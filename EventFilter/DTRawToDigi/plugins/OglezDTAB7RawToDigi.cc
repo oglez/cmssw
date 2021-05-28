@@ -663,11 +663,10 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
 #endif
 
   if (payloadVersion_==11) {  // Now we are just reading the values as indicated above
-
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
     // We may use the previous ones as references
     OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/16.,  // Using mm as this argument (JM uses mm as metric)
                                                             jmTanPhi/4096.,quality,&phiAngle,&phiBending);
-#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
     phi_cmssw = (int) round(phiAngle*65536./0.8);  // phiAngle (CMSSW)
     phib_cmssw = (int) round(phiBending*2048./1.4);  // phiBending (CMSSW)
 #endif
