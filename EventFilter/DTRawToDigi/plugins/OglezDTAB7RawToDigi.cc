@@ -5,8 +5,11 @@
 //             2019_11_14 Oscar Gonzalez: adapted to v9 of the payload.
 //             2020_02_03 Oscar Gonzalez: using edm::FileInPath for files!
 //                                        also using option for 30 TDC per BX.
+//             2020_07_08 Oscar Gonzalez: allowing times to be negative avoiding correction to make them positive (as a test).
 //             2020_10_23 Oscar Gonzalez: deactivating the correction to force negative times.
-
+//             2020_11_27 Oscar Gonzalez: adapted to v11 of the payload
+//             2021_05_27 Oscar Gonzalez: allowing the extended version of the primitives to be saved
+//                                        in addition to the normal.
 
 #include "../interface/OglezDTAB7RawToDigi.h"
 
@@ -38,11 +41,6 @@ OglezTransformJMSystem* OglezTransformJMSystem::_instance = nullptr;
 OglezDTAB7RawToDigi::OglezDTAB7RawToDigi(const edm::ParameterSet& pset)
 // Constructor of the class
 {
-  // Collections to be produced for the EventRecord:
-  produces<DTDigiCollection>();
-  //  produces<L1MuDTChambPhContainer>();
-  produces<L1Phase2MuDTPhContainer>();
-
   // Reading parameters
 
   DTAB7InputTag_ = pset.getParameter<edm::InputTag>("DTAB7_FED_Source");
@@ -59,13 +57,28 @@ OglezDTAB7RawToDigi::OglezDTAB7RawToDigi(const edm::ParameterSet& pset)
 
   rawToken_ = consumes<FEDRawDataCollection>(DTAB7InputTag_);
 
+  produceExtendedPrimitives_ = pset.getUntrackedParameter<bool>("produceExtendedPrimitives",false);
+
   hitOrder_.clear();
 
   newCRC_ = 0xFFFF;
 
   bxCounter_=0;
-  isV9_=false;
+//OLD  isV9_=false;
+  payloadVersion_ = 11;  // The latest!
 
+  // Collections to be produced for the EventRecord:
+  produces<DTDigiCollection>();
+  //  produces<L1MuDTChambPhContainer>();
+  produces<L1Phase2MuDTPhContainer>();
+  if (produceExtendedPrimitives_) {
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+  produces<L1Phase2MuDTExtPhContainer>();  // On demand!
+#else
+  std::cerr<<"OGDT-ERROR: Not possible to produce the extended trigger primitives because not compiled with the support ot it"
+           <<std::endl<<"            You can recompile it with support commenting the appropriate line in OglezDTAB7RawToDigi.h"<<std::endl;
+#endif
+  }
   // Choosing the channel mapping to use:
   auto val = pset.getUntrackedParameter<std::string>("channelMapping","june2019");
 
@@ -119,16 +132,14 @@ void OglezDTAB7RawToDigi::produce(edm::Event& e, const edm::EventSetup& c)
 {
   digis_=new DTDigiCollection();
   primitives_.clear();
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+  extPrimitives_.clear();
+#endif
 
   if (!fillRawData(e, c)) return;
 
   auto AB7DTDigi_product = std::make_unique<DTDigiCollection>(*digis_);
-
-
-  // Original structure of the trigger primitives
-  //L1MuDTChambPhContainer primContainer;
-  //primContainer.setContainer(primitives_);
-  //auto AB7DTPrim_product = std::make_unique<L1MuDTChambPhContainer>(primContainer);
+  e.put(std::move(AB7DTDigi_product));
 
   // Phase2 structure of the trigger primitives (by Federica Primavera)
   L1Phase2MuDTPhContainer primContainer;
@@ -139,10 +150,20 @@ void OglezDTAB7RawToDigi::produce(edm::Event& e, const edm::EventSetup& c)
 //    std::cout<<"OGDT-INFO: No TP in the event (?) "<<primitives_.size()<<std::endl;
 //  }
 
-//  e.put(std::move(AB7DTDigi_product), "DTAB7Digis");
-//  e.put(std::move(AB7DTPrim_product), "DTAB7Primitives");
-  e.put(std::move(AB7DTDigi_product));
   e.put(std::move(AB7DTPrim_product));
+
+  // Optionally we may save the exte3nded primitives... if requested and compilation allowed!
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+  if (produceExtendedPrimitives_) {
+    // Phase2 structure of the extended trigger primitives (by Nicolo' Trevisani)
+    L1Phase2MuDTExtPhContainer extPrimContainer;
+    extPrimContainer.setContainer(extPrimitives_);
+    auto AB7DTExtPrim_product = std::make_unique<L1Phase2MuDTExtPhContainer>(extPrimContainer);
+
+    e.put(std::move(AB7DTExtPrim_product));
+  }
+#endif
+
 
   delete digis_;
 }
@@ -195,7 +216,7 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
   newCRC_ = 0xFFFF;
 
   bxCounter_=0;
-  isV9_=false;
+//OLD  isV9_=false;
 
   // Reading the headers:
 
@@ -248,7 +269,10 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
     if (0 || doHexDumping_) std::cout << "OGDT-INFO: Dump + AMC: "<<slot<<" size: "<<slot_size[slot]<<std::endl;
   }
 
-  int fw_version = -1;  // For checks!
+  int fw_version = -1;  // For checks! (version of the firware, as reported by the system)
+  payloadVersion_ = 11;  // Version of the payload by default (latest!)
+
+  // payloadVersion_ = 9;  // FORCING USE OF OTHER FOR TESTS!
 
   // Reading all the payloads for the AB7... each AMC
   for (int j=0;j<nslots;++j) {
@@ -286,7 +310,8 @@ void OglezDTAB7RawToDigi::process(int DTAB7FED,
       fw_version = (dataWord>>7)&0x01FF; // Bits 7-15 gives the the fw version
 
       //std::cout<<"Firmware version: "<<fw_version<<std::endl;
-      if (fw_version>=148) isV9_=true;   // New structure of the payload for the trigger primitives!
+      if (fw_version<148) payloadVersion_=8;  // Version 8: the first with some stability!
+      else if (fw_version<169) payloadVersion_=9;   // V9: New structure of the payload for the trigger primitives!
     }
     else if (fw_version!=((dataWord>>7)&0x01FF)) {
       edm::LogWarning("oglez_dtab7_unpacker")
@@ -527,7 +552,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_hitWord (long dataWord,int fedno, int s
 void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long secondWord,long thirdWord,int fedno, int slot)
 // Read the Trigger Primitive information from the Payload of the AB7.
 {
-  //std::cout<<"TP Words: "<<std::hex<<firstWord<<" "<<secondWord<<" "<<thirdWord<<std::dec<<" "<<isV9_<<std::endl;
+  //std::cout<<"TP Words: "<<std::hex<<firstWord<<" "<<secondWord<<" "<<thirdWord<<std::dec<<" "<<payloadVersion_<<std::endl;
 
   int stationId = ((firstWord>>60)&0x3)+1;   // Bits 60-61 (first word) is the station (-1, in C++ convention)
   int superlayer = ((firstWord>>58)&0x3);   // Bits 58-59 (first word) is the superlayer (1-3) or a phi-primitive (0)
@@ -557,7 +582,7 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   int jmTanPhi = ((firstWord>>17)&0x7FFF); // Bits 17-31 (first word) is the slope (phi or theta depending on SL)
   int chi2=0;  // No information in V9 in the first word
 
-  if (!isV9_) {
+  if (payloadVersion_==8) {
     //v4  int position = ((firstWord)&0xFFFF);   // Bits 0-15 (first word) is the position (phi or theta depending on SL)
     position = ((firstWord)&0x7FFF);   // Bits 0-14 (first word) is the position (phi or theta depending on SL)
 
@@ -571,13 +596,32 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   // Acording to Jose Manuel (email 2019_04_03) this is 4096*tan(phi)
   // but we we need to account for the sign.
   if ( ((jmTanPhi>>14)&0x01)==0x01) { // Negative value!
-    jmTanPhi = (jmTanPhi-32768);   // (1<<15)    // -1*(((~slope)&0x7FFF)+1);
+    jmTanPhi = (jmTanPhi-32768);   // (1<<15)    // -1*(((~x)&0x7FFF)+1);
   }
 
-  // In v8 they put a third word with the complete chi2... when it is there.
-  if (thirdWord!=0) {
-    chi2 = ((thirdWord)&0xFFFFFF);   // Bits 0-23 is the full chi2
+  int phi_3rdword=0;   // Value of phi as provided in the third word (V11)
+  int phiB_3rdword=0;  // Value of phi Bending as provided by the third word (V11)
+
+  if (payloadVersion_==11) {  // Differences in V11 of the payload... more info
+    chi2 = ((thirdWord)&0x3FFFF);    // Bits 0-17 is the Full CVhi2
+
+    phi_3rdword = ((thirdWord>>30)&0x1FFFF);  // Bits 30-46 is the phi
+    // Acording to Alvaro, we need to account for the sign as follows
+    if ( ((phi_3rdword>>16)&0x01)==0x01) // Negative value!
+      phi_3rdword = (phi_3rdword-131072);  // (1<<17)   // -1*(((~x)&0x1FFFF)+1);  // -1*( ((x^0x1FFFF)&0x1FFF) + 1)
+
+    phiB_3rdword = ((thirdWord>>47)&0x1FFF);  // Bits 47-59 is the phi bending
+    // Acording to Alvaro, we need to account for the sign as follows
+    if ( ((phiB_3rdword>>12)&0x01)==0x01) // Negative value!
+      phiB_3rdword = (phiB_3rdword-8192);   // (1<<13)  // -1*(((~x)&0x1FFF)+1);  // -1*( ((x^0x1FFF)&0x1FFF) + 1)
   }
+  else {
+    if (thirdWord!=0) {  // In v8 they put a third word with the complete chi2... when it is there.
+      chi2 = ((thirdWord)&0xFFFFFF);   // Bits 0-23 is the full chi2
+    }
+    // We may need to do calculations not needed any more!
+  }
+
   //else std::cout<<"OGDT-ERROR: We were expecting something in the third word of the TP!"<<std::endl;
 
   if (0 || doHexDumping_) std::cout<<"OGDT-INFO: Dump + TP Info summary: BX: "<<bx<<" "<<" Q="<<quality<<" SL="<<superlayer<<std::endl; // TEST:" "<<32*bx/25<<std::endl;
@@ -610,16 +654,45 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
   DTSuperLayerId slId(wheel,stationId,sector,superlayer);
 
 //  std::cout<<"TESTING VALUES: "<<position<<" "<<jmTanPhi<<" "<<quality<<" "<<std::endl;
+  double phiAngle = 0;
+  double phiBending = 0;
 
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+  int phi_cmssw = 0;
+  int phib_cmssw = 0;
+#endif
 
-  double phiAngle=0;
-  double phiBending=0;
-  if (isV9_)  // Better resolution in position information.
+  if (payloadVersion_==11) {  // Now we are just reading the values as indicated above
+
+    // We may use the previous ones as references
     OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/16.,  // Using mm as this argument (JM uses mm as metric)
                                                             jmTanPhi/4096.,quality,&phiAngle,&phiBending);
-  else
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+    phi_cmssw = (int) round(phiAngle*65536./0.8);  // phiAngle (CMSSW)
+    phib_cmssw = (int) round(phiBending*2048./1.4);  // phiBending (CMSSW)
+#endif
+
+    // Reading the firmware values, converting to the correct units, following Alvaro's indication (2020_11_27)
+    phiAngle = phi_3rdword/double(131072);   // double(1<<17);
+    phiBending = phiB_3rdword/double(2048);  // double(1<<11);   // This is *4/2**13)
+  }
+  else if (payloadVersion_==9) { // Better resolution in position information.
+    OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/16.,  // Using mm as this argument (JM uses mm as metric)
+                                                            jmTanPhi/4096.,quality,&phiAngle,&phiBending);
+
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+    phi_cmssw = (int) round(phiAngle*65536./0.8);  // phiAngle (CMSSW, the only one available)
+    phib_cmssw = (int) round(phiBending*2048./1.4);  // phiBending (CMSSW, the only one available)
+#endif
+  }
+  else {
     OglezTransformJMSystem::instance()->getPhiAndPhiBending(slId,dtGeo_,position/4.,  // Using mm as this argument (JM uses mm as metric)
                                                             jmTanPhi/4096.,quality,&phiAngle,&phiBending);
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+    phi_cmssw = (int) round(phiAngle*65536./0.8);  // phiAngle (CMSSW, the only one available)
+    phib_cmssw = (int) round(phiBending*2048./1.4);  // phiBending (CMSSW, the only one available)
+#endif
+  }
 
   // Adding the trigger primitive, perhaps with some information modified
   int uind = 0;
@@ -652,6 +725,102 @@ void OglezDTAB7RawToDigi::readAB7PayLoad_triggerPrimitive (long firstWord,long s
 
   // Storing the primitive
   primitives_.push_back(trigprim);
+
+  // Optionally we may store a extended primitive: if requested ans compiled
+  // with support of it!
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+  if (produceExtendedPrimitives_) {
+    int wireId[8] = {-1,-1,-1,-1, -1,-1,-1,-1};   // Note convention for "not-used" hit!
+    int tdc[8] = {0};
+    int lat[8] = {0};
+
+    // For correlated primitives, superlayer==0 and we need to get the
+    // information from the previous two types
+    if (superlayer==0) {
+      if (extPrimitives_.size()<2) std::cerr<<"OGDT-ERROR: Missing non-correlated primitive for correlated one!!! "<<extPrimitives_.size()<<std::endl;
+      else {
+        int i=extPrimitives_.size()-1;   // Last primitive (usually SL=3, not assumed!)
+        auto *prim = &(extPrimitives_[i]);
+        int joff = (prim->slNum()-1)*2;  // 0-3 is SL1, 4-7 is SL3
+        for (int j=0;j<4;++j) {
+          wireId[j+joff] = prim->pathWireId(j);
+          tdc[j+joff] = prim->pathTDC(j);
+          lat[j+joff] = prim->pathLat(j);
+        }
+        --i;  // Previous to last primitive!
+        auto *prim2 = &(extPrimitives_[i]);
+
+        joff = (prim2->slNum()-1)*2;  // 0-3 is SL1, 4-7 is SL3
+        for (int j=0;j<4;++j) {
+          wireId[j+joff] = prim2->pathWireId(j);
+          tdc[j+joff] = prim2->pathTDC(j);
+          lat[j+joff] = prim2->pathLat(j);
+        }
+
+        // Some checks for coherence!!!
+        if (prim2->slNum()==0 || prim->slNum()==0 || prim->slNum()==prim2->slNum()) {
+          std::cerr<<"OGDT-ERROR: Something is not correct in the primitive structure for the ones used for a correlated primitive!!! "
+                   <<prim->slNum()<<" "<<prim2->slNum()<<std::endl;
+        }
+      }
+    }
+    // For non-correlated, we use an advanced code.
+    else OglezDTAB7RawToDigi::getHitInformationForPrimitive(secondWord,wireId,tdc,lat);
+
+//    for (int j=0;j<8;++j) {
+//      std::cout<<"         "<<j<<" "<<wireId[j]<<" "<<tdc[j]<<" "<<lat[j]<<std::endl;
+//    }
+
+    // Creating and storing the extended trigger primitive information.
+
+    L1Phase2MuDTExtPhDigi trigextprim(bx,   // ubx (m_bx)
+                                      wheel,   // uwh (m_wheel)
+                                      sector-1,   // usc (m_sector)  USING L1 trigger primitives convention.
+                                      stationId,      // ust (m_station)
+                                      superlayer,   // usl (m_superlayer)
+
+                                      uphi,   // uphi (_phiAngle)
+                                      uphib,   // uphib (m_phiBending)
+
+                                      quality,  // uqua (m_qualityCode)
+                                      uind,   // uind (m_segmentIndex)
+
+                                      time,  // ut0 (m_t0Segment)
+                                      chi2,  // uchi2 (m_chi2Segment)
+
+                                      position,   // m_xLocal
+                                      jmTanPhi,   // m_tanPsi
+                                      phi_cmssw,  // m_phiCMSSW
+                                      phib_cmssw, // m_phiBendCMSSW
+
+                                      -10,    // urpc (m_rpcFlag)
+                                      wireId, // m_pathWireId[8]=0
+                                      tdc,    // m_pathTDC[8]=0
+                                      lat     // m_pathLat[8]=0
+                                      );
+
+    extPrimitives_.push_back(trigextprim);
+  }
+#endif
+}
+
+//-----------------------------------------------------------------------
+void OglezDTAB7RawToDigi::getHitInformationForPrimitive (long secondWord, int *wireId, int *tdc, int *lat)
+// Static routine to process the hit information packed in the given word of
+// the trigger primitive.
+{
+  // Assuming structure of the secondWord in version 11 (similar in previous ones):
+
+  for (unsigned int ilay=0;ilay<4;++ilay) {   // Reading by layer
+
+    bool used = (((secondWord>>(4+ilay))&0x1)==0x01);
+    // We only overlay the value if used!
+    if (used) {
+      lat[ilay] = ((secondWord>>ilay)&0x01);      // Laterality: left(0) or right(1) of the wire
+      tdc[ilay] = ((secondWord>>(8+4*ilay)&0x0F));  // Relative drift time as packed in the firmare
+      wireId[ilay] = ((secondWord>>(24+7*ilay)&0x007F));  // Channel number
+    }
+  }
 }
 
 //-----------------------------------------------------------------------

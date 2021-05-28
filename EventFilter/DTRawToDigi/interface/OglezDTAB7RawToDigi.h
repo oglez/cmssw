@@ -3,6 +3,9 @@
 // Started on (2019_01_22) by Oscar Gonzalez (CIEMAT)
 //             2019_11_14  Oscar Gonzalez: adapted to cope vor v7/v8 and v9 at the same time.
 //             2020_02_03  Oscar Gonzalez: improving the way the shifts for the channels are processed.
+//             2020_11_27  Oscar Gonzalez: adapted to new way of handling the versions of the payloads
+//             2021_05_27  Oscar Gonzalez: allowing the extended version of the primitives to be saved
+//                                         in addition to the normal.
 //
 
 #ifndef Oglez_AB7Test_DTAB7RawToDigi_h
@@ -22,6 +25,13 @@
 #include <FWCore/Utilities/interface/InputTag.h>
 
 #include "DataFormats/L1DTTrackFinder/interface/L1Phase2MuDTPhContainer.h"
+
+// Comment the following line if not compiligin with the support of extended
+// primitives.
+//#define __COMPILATION_EXTENDED_PRIMITIVES__
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+#include "DataFormats/L1DTTrackFinder/interface/L1Phase2MuDTExtPhContainer.h"
+#endif
 
 #include <string>
 #include <queue>
@@ -75,6 +85,10 @@ private:
   /// which is the start of the orbit).
   bool correctTPTimeToL1A_;
 
+  /// To indicate whether we need/want to have the extended collection of the
+  /// trigger primitives. A format used for debugging containing additional
+  /// information.
+  bool produceExtendedPrimitives_;
 
   /// Feds that should be read in the task.
   std::vector<int> feds_;
@@ -95,13 +109,18 @@ private:
   int bxCounter_; ///< Value of the BX as provided by the header FED (and
                   ///< checked with the AMC information).
 
-  bool isV9_;  ///< To indicate whether is v9 (and later) or version 7/8 of the payload.
+//OLD  bool isV9_;  ///< To indicate whether is v9 (and later) or version 7/8 of the payload.
+  int payloadVersion_;  ///< To register the version of the payload.
 
   std::map<uint32_t, int> hitOrder_;  ///< Hit counter
 
   DTDigiCollection *digis_;  ///< Digis collection to be generated
   //  std::vector<L1MuDTChambPhDigi> primitives_;  ///< Trigger primitives to be read (original)
   std::vector<L1Phase2MuDTPhDigi> primitives_;  ///< Trigger primitives to be read (Phase2, by F. Primavera)
+
+#ifdef __COMPILATION_EXTENDED_PRIMITIVES__
+  std::vector<L1Phase2MuDTExtPhDigi> extPrimitives_;  ///< Extended trigger primitives (Phase2, by N. Trevisani)
+#endif
 
   edm::ESHandle<DTGeometry> dtGeo_;  ///< To handle the DTGeometry tools.
 
@@ -176,6 +195,11 @@ private:
     (*sl)=1;
     (*wire)=1+ (ch_id/4);
   }
+
+  /// Static routine to process the hit information packed in the given word of
+  /// the trigger primitive.
+  static void getHitInformationForPrimitive (long secondWord, int *wireId, int *tdc, int *lat);
+
 };
 
 #endif
