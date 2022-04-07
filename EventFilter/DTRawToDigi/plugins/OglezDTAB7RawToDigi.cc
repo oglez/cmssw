@@ -113,6 +113,8 @@ OglezDTAB7RawToDigi::~OglezDTAB7RawToDigi(){}
 void OglezDTAB7RawToDigi::produce(edm::Event& e, const edm::EventSetup& iEventSetup)
 // Main routine to process in every event.
 {
+  dtGeo_ = iEventSetup.getHandle(dtGeoToken_);  // To access the geometry information.
+
   digis_=new DTDigiCollection();
   primitives_.clear();
 #ifdef __COMPILATION_EXTENDED_PRIMITIVES__
@@ -120,8 +122,6 @@ void OglezDTAB7RawToDigi::produce(edm::Event& e, const edm::EventSetup& iEventSe
 #endif
 
   if (!fillRawData(e, iEventSetup)) return;
-
-  dtGeo_ = iEventSetup.getHandle(dtGeoToken_);  // To access the geometry information.
 
   auto AB7DTDigi_product = std::make_unique<DTDigiCollection>(*digis_);
   e.put(std::move(AB7DTDigi_product));
